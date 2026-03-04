@@ -9,3 +9,5 @@ wheels/
 # Virtual environments
 .venv
 0000.parquet
+data
+pgdata
