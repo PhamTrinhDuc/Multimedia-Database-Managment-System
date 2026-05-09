@@ -7,19 +7,6 @@
 
 ---
 
-## MỤC LỤC
-
-1. Mở đầu
-2. Bộ dữ liệu tiếng chim
-3. Bộ thuộc tính nhận diện tiếng chim
-4. Hệ cơ sở dữ liệu quản trị siêu dữ liệu
-5. Hệ thống tìm kiếm tiếng chim
-6. Demo và đánh giá kết quả
-7. Kết luận
-8. Tài liệu tham khảo
-
----
-
 ## CHƯƠNG 1. MỞ ĐẦU
 
 ### 1.1. Đặt vấn đề
@@ -258,53 +245,17 @@ Mô tả chi tiết từng bước, input/output của mỗi bước.
 
 ### 6.2. Demo hệ thống
 
-#### 6.2.1. Kịch bản 1 — File truy vấn thuộc loài đã có trong CSDL
-- File đầu vào, loài tương ứng
-- Top-5 kết quả, similarity score
-- Nhận xét: kết quả Top-1/5 có đúng loài không?
-
-#### 6.2.2. Kịch bản 2 — File truy vấn thuộc loài chưa có trong CSDL
+#### Kịch bản - File truy vấn thuộc loài chưa có trong CSDL
 - File đầu vào, loài thực tế
 - Top-5 kết quả, similarity score
 - Nhận xét: hệ thống trả về loài nào gần nhất? Có hợp lý không?
 
 #### 6.2.3. So sánh IVFFlat vs HNSW
 - Thời gian truy vấn trung bình
-- Recall@5 (tỉ lệ kết quả đúng trong Top-5)
-
-### 6.3. Đánh giá chất lượng tìm kiếm
-
-#### 6.3.1. Độ chính xác (Precision@5)
-- Tỉ lệ file trong Top-5 đúng loài với file truy vấn
-
-#### 6.3.2. Recall@5
-- Tỉ lệ tìm được file đúng trong tổng số file cùng loài
-
-#### 6.3.3. Thời gian phản hồi
-- Thời gian trích xuất đặc trưng
-- Thời gian truy vấn CSDL
-- Tổng thời gian end-to-end
-
-### 6.4. Phân tích kết quả và thảo luận
-- Trường hợp hệ thống hoạt động tốt
-- Trường hợp hệ thống gặp khó khăn (tiếng ồn nền cao, loài có tiếng hót tương tự nhau, ...)
-- Nguyên nhân và hướng khắc phục
-
 ---
 
 ## CHƯƠNG 7. KẾT LUẬN
 
-### 7.1. Kết quả đạt được
-- Tóm tắt những gì đã xây dựng được so với yêu cầu đề bài (đối chiếu từng mục 1–5 của TOPIC)
-
-### 7.2. Hạn chế
-- Hạn chế về dữ liệu, về đặc trưng, về hệ thống
-
-### 7.3. Hướng phát triển
-- Tăng kích thước dataset
-- Thử nghiệm đặc trưng học sâu (CNN embedding, BirdNET, ...)
-- Xây dựng module nhận diện loài tự động (classification)
-- Tối ưu hiệu năng cho dataset lớn hơn
 
 ---
 
@@ -317,5 +268,3 @@ Mô tả chi tiết từng bước, input/output của mỗi bước.
 - Các tài liệu khác sử dụng trong quá trình thực hiện
 
 ---
-
-> **Ghi chú:** Bạn điền ảnh screenshot, bảng số liệu thực tế, và sơ đồ vào các chỗ được chú thích trong từng mục. Nếu cần mình viết chi tiết nội dung cho bất kỳ chương nào, cứ hỏi thêm nhé!

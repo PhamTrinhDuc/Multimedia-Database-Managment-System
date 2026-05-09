@@ -1,54 +1,110 @@
-# 🐦 Hệ Thống Tìm Kiếm Tiếng Chim Hót (PTIT-CSDLDPT)
-
-Một hệ thống **lưu trữ và tìm kiếm tiếng chim** sử dụng **9 loại đặc trưng âm học** (MFCC + Spectral Features + ZCR + Chroma + RMS) để tạo **vector 108-chiều** và **vector search** với PostgreSQL + pgvector.
-
----
-
-## 📋 Mô Tả Dự Án
-
-Dự án này xây dựng một hệ thống hoàn chỉnh để:
-
-1. **Thu thập & xử lý dữ liệu**: Sưu tầm bộ dữ liệu gồm 500+ file âm thanh tiếng chim
-2. **Trích xuất đặc trưng**: Sử dụng **9 loại đặc trưng âm học** (MFCC, Spectral Features, ZCR, Chroma, RMS) để tạo vector 108-chiều
-3. **Lưu trữ**: Quản lý siêu dữ liệu và vector embedding trong PostgreSQL + pgvector
-4. **Tìm kiếm**: Cho phép tìm kiếm 5 file âm thanh tương tự nhất với một file đầu vào bất kỳ (dùng cosine similarity)
-5. **Giao diện**: Cung cấp UI thân thiện cho người dùng qua Streamlit + REST API
-
----
-
 ## 🏗️ Cấu Trúc Dự Án
 
 ```
 PTIT-CSDLDPT/
-├── source/                      # Mã nguồn chính
-│   ├── main.py                  # Chương trình chính (xử lý dữ liệu)
-│   ├── app.py                   # Giao diện Streamlit frontend
-│   ├── api.py                   # REST API backend (FastAPI)
-│   ├── database.py              # Kết nối và quản lý DB
-│   ├── feature_extraction.py    # Trích xuất 9 loại features (MFCC 60d + Spectral 11d + ZCR 2d + Chroma 12d + RMS 2d) → 108-chiều
-│   ├── indexing.py              # Tạo vector index (IVFFlat, HNSW)
-│   ├── retriever.py             # Tìm kiếm vector similarity
-│   ├── split_data.py            # Chia nhỏ file âm thanh
-│   ├── test.py                  # Unit tests
-│   ├── utils/                   # Utilities
-│   │   ├── config.py
-│   │   ├── data.py
-│   │   └── utils.py
-│   └── notebooks/               # Jupyter notebooks
-│       ├── debug.ipynb
-│       └── langgraph.ipynb
-├── data/                        # Dữ liệu
-│   ├── Birds Voice.csv          # Dataset gốc
-│   └── samples/                 # File âm thanh mẫu
-├── assert/                      # Tài liệu hỗ trợ
-│   ├── TOPIC.md                 # Yêu cầu đề bài
-│   └── EXPLAINATION_FEATURE.md  # Giải thích chi tiết các feature
-├── db/                          # SQL init scripts
-│   └── init.sql
-├── docker-compose.yml           # Docker Compose config
-├── pyproject.toml               # Python project metadata
-└── README.md                    # File này
+│
+├── 📂 source/                              # ⭐ MÃ NGUỒN CHÍNH
+│   │
+│   ├── 🔴 PIPELINE CHÍNH (XỬ LÝ OFFLINE)
+│   │   ├── main.py                         # Entry point: Load parquet → Preprocess → Extract features → Normalize → Save embeddings
+│   │   ├── split_data.py                   # Chia nhỏ file âm thanh dài thành đoạn 5 giây
+│   │   └── feature_extraction.py           # Core: Trích xuất 108-chiều features (offline + online)
+│   │
+│   ├── 🟢 DATABASE & STORAGE
+│   │   ├── database.py                     # PostgreSQL connection, schema, CRUD operations
+│   │   └── indexing.py                     # Tạo vector indexes (IVFFlat, HNSW) trên pgvector
+│   │
+│   ├── 🔵 SEARCH & RETRIEVAL (QUERY TIME)
+│   │   └── retriever.py                    # Vector similarity search → Top-K file tương tự
+│   │
+│   ├── 🟡 API & FRONTEND
+│   │   ├── api.py                          # REST API endpoints (FastAPI)
+│   │   │                                   # POST /search, GET /birds, GET /audio/{id}, etc.
+│   │   └── app.py                          # UI tương tác (Streamlit)
+│   │
+│   ├── 📊 TESTING & UTILITIES
+│   │   ├── test.py                         # Unit tests cho các modules chính
+│   │   └── utils/                          # Helper functions
+│   │       ├── config.py                   # Configuration constants (paths, hyperparams)
+│   │       ├── data.py                     # Data loading, validation utilities
+│   │       └── utils.py                    # General utilities
 ```
+
+---
+
+### 📋 Mô Tả Chi Tiết Từng Phần
+
+#### **1️⃣ source/ — Mã Nguồn Chính**
+
+| File | Mục Đích | Input | Output |
+|------|---------|-------|--------|
+| `main.py` | **Orchestrator chính**: Load parquet → Preprocess → Feature extraction → Normalize → Save to DB | Parquet file + config | 108-chiều vectors lưu PostgreSQL |
+| `feature_extraction.py` | **Core logic**: Trích xuất 9 loại features (MFCC 60d + Spectral 11d + ...) | Audio bytes (22kHz) | Dict features flattened + 108-d vector |
+| `split_data.py` | **Chia nhỏ audio**: Cắt file dài thành đoạn 5 giây | Audio file (.wav/.mp3) | Nhiều đoạn ngắn |
+| `database.py` | **DB Management**: Connection, schema, CRUD | Queries, data | PostgreSQL responses |
+| `indexing.py` | **Vector Index**: Tạo IVFFlat/HNSW indexes | 108-d vectors | Fast search index |
+| `retriever.py` | **Search Engine**: Query vector → Top-K similar | Query vector + top_k | Results ranking |
+| `api.py` | **REST Endpoints**: `/search`, `/birds`, `/audio/{id}`, etc. | HTTP requests | JSON responses |
+| `app.py` | **Streamlit UI**: Upload audio, visualize results | User interactions | Web interface |
+| `test.py` | **Unit Tests**: Validate modules | Test cases | Pass/Fail reports |
+
+#### **2️⃣ data/ — Dữ Liệu**
+
+```
+data/
+├── Birds Voice.csv          # Dataset gốc: filename, species, audio (bytes)
+└── samples/
+    ├── Bulbul/              # Loài chim 1
+    │   ├── bulbul_001.wav
+    │   ├── bulbul_002.wav
+    │   └── ...
+    ├── Sparrow/             # Loài chim 2
+    └── ...
+```
+
+- **CSV**: Metadata mapping (file → loài)
+- **WAV/MP3**: Audio files (chưa được xử lý)
+
+#### **3️⃣ assert/ — Tài Liệu & Giáo Dục**
+
+| File | Nội Dung |
+|------|----------|
+| `TOPIC.md` | Yêu cầu đề tài, mục tiêu, phạm vi, timeline |
+| `EXPLAINATION_FEATURE.md` | **📖 Giải thích chi tiết** từng feature (9 loại), công thức, ý nghĩa |
+| `STRUCTURE_REPORT.MD` | Báo cáo cấu trúc project, phân tích dữ liệu, kết quả |
+
+#### **4️⃣ db/ — Database Initialization**
+
+```sql
+-- init.sql
+CREATE TABLE birds (...)              -- Danh sách loài
+CREATE TABLE audio_files (...)        -- Metadata file
+CREATE TABLE acoustic_features (...)  -- Raw features
+CREATE TABLE embeddings (...)         -- 108-chiều vectors
+CREATE INDEX ... USING ivfflat ...    -- Vector search index
+```
+
+#### **5️⃣ Docker & Deployment**
+
+```yaml
+# docker-compose.yml
+services:
+  postgres:
+    image: pgvector/pgvector
+    ports: 5433:5432
+  
+  api:
+    build: .
+    ports: 8000:8000
+    command: uvicorn api:app --host 0.0.0.0 --port 8000
+  
+  streamlit:
+    build: .
+    ports: 8501:8501
+    command: streamlit run app.py
+```
+
+Chạy toàn bộ hệ thống: `docker-compose up -d`
 
 ---
 
