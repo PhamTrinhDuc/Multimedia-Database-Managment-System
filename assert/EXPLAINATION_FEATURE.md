@@ -438,29 +438,225 @@ RMS: ░░░░░░░░░░░░░░░░░░      ← Im lặng
 
 ---
 
-### **8. Tempo/Rhythm** ⭐⭐⭐
+### **8. Spectral Contrast (Độ tương phản phổ)** ⭐⭐⭐⭐⭐
 
 #### **🤔 Nó là gì?**
 
-**Ví dụ đơn giản**:
+**Ẩn dụ đơn giản**:
+Tưởng tượng bạn so sánh "sự khác biệt" giữa các dải tần số:
 ```
-Chim gõ kiến (Woodpecker):
-Tok-tok-tok-tok-tok  (nhanh, đều)
-Tempo = 120 BPM
+Dải tần thấp (Bass):     ████████░░  ← Năng lượng lớn
+Dải tần trung (Mid):     ░░░░████░░  ← Năng lượng nhỏ
+Dải tần cao (Treble):    ██░░░░░░░░  ← Năng lượng trung bình
 
-Chim cú:
-Huu....... huu....... huu  (chậm)
-Tempo = 20 BPM
+Spectral Contrast = Đo "sự chênh lệch" giữa các dải này
 ```
 
-**Tempo = Nhịp độ** của tiếng chim (bao nhiêu "nốt"/phút)
+**Nói cách khác**:
+- **Contrast cao** → Dải tần số có sự khác biệt rõ ràng (tiếng chim, nhạc cụ)
+- **Contrast thấp** → Dải tần số phẳng, đều nhau (tiếng gió, noise)
 
-#### **🎯 Tại sao chọn?**
+#### **📊 Ví dụ thực tế**
 
-Một số loài chim có nhịp điệu đặc trưng:
-- Chim gõ kiến: Fast, regular
-- Chim cú: Slow, irregular
-- Chim sẻ: Medium, variable
+```python
+Spectral Contrast trong âm nhạc:
+- Piano:       [3.5, 2.8, 2.1, 1.9, 1.2, 0.8, 0.5]  ← Cao, rõ ràng
+- Tiếng gió:   [0.3, 0.2, 0.25, 0.22, 0.2, 0.19, 0.18]  ← Thấp, phẳng
+
+Spectral Contrast với tiếng chim:
+- Chim sẻ (hót rõ):      [3.2, 2.5, 1.8, 1.2, 0.8, 0.4, 0.2]
+- Chim kêu (u ơ ơ):      [2.1, 1.8, 1.5, 1.4, 1.2, 1.1, 1.0]
+- Tiếng nước (background):[0.4, 0.3, 0.35, 0.32, 0.31, 0.3, 0.29]
+```
+
+#### **🎯 Tại sao chọn Spectral Contrast?**
+
+| Lý do | Giải thích | Ứng dụng với chim |
+|-------|-----------|------------------|
+| **1. Phân biệt tiếng chim vs background** | Tiếng chim có contrast cao, background noise thấp | Loại bỏ tiếng gió, tiếng nước |
+| **2. Bắt tính "phong phú"** | Âm thanh phong phú → contrast cao | Chim hót có giai điệu vs chim đơn giản |
+| **3. 7 chiều features** | Chia phổ thành 7 dải → 7 giá trị | Khác MFCC 13-20 chiều → Bổ sung tốt |
+| **4. Robust to pitch** | Không phụ thuộc cao hay thấp | Phân biệt chim nam vs nữ, trẻ vs già |
+
+#### **📝 Cách tính (đơn giản hóa)**
+
+```
+Spectral Contrast được tính cho 7 dải tần số:
+
+Bước 1: Chia phổ thành 7 dải (subbands)
+        [0-1kHz] [1-2kHz] [2-4kHz] [4-8kHz] [8-16kHz] ...
+
+Bước 2: Tính "Peak" (giá trị cao nhất) trong mỗi dải
+        [3.5]    [2.1]    [2.8]    [1.9]    [1.2]     ...
+
+Bước 3: Tính "Valley" (giá trị thấp nhất) trong mỗi dải
+        [0.2]    [0.15]   [0.18]   [0.12]   [0.08]    ...
+
+Bước 4: Contrast = Peak - Valley (cho mỗi dải)
+        [3.3]    [1.95]   [2.62]   [1.78]   [1.12]    ...
+        ↑ Output là 7 số này!
+```
+
+#### **💡 Câu hỏi thầy có thể hỏi**
+
+**Q1: "Tại sao chọn 7 dải?"**
+```
+A: 7 là standard vì:
+   - Bao quát toàn phổ (0-22kHz)
+   - Đủ chi tiết mà không quá phức tạp
+   - Librosa library mặc định dùng 7
+   
+   Công thức: 7 bands = log-spaced subbands
+```
+
+**Q2: "Khác gì với Spectral Rolloff?"**
+```
+A: 
+Spectral Rolloff:    Tần số mà tại đó 85% năng lượng (1 số)
+Spectral Contrast:   Độ tương phản tính từng dải (7 số)
+
+Rolloff: Global → Nhìn toàn cảnh
+Contrast: Local → Chi tiết từng vùng tần số
+```
+
+**Q3: "Contrast cao có ý nghĩa gì?"**
+```
+A: Contrast cao = "Tiếng chim rõ, phân biệt"
+   
+   Ứng dụng:
+   - Detect tiếng chim trong background noise
+   - Chất lượng âm thanh tốt
+   - Không bị kìm nén (compressed)
+```
+
+---
+
+### **9. Spectral Flatness (Độ phẳng phổ)** ⭐⭐⭐⭐
+
+#### **🤔 Nó là gì?**
+
+**Ẩn dụ về "sự đều đặn"**:
+```
+Âm thanh "âm nhạc" (chim hót):
+████░░░██░░██░░█░░░░░░░░░░
+     ↑ Có "peak" rõ ràng, không đều
+
+Noise (tiếng nước, gió):
+░░░░░░░░░░░░░░░░░░░░░░░░
+     ↑ Phẳng, đều đặn
+
+Spectral Flatness = Đo "độ bằng" của phổ
+  - Cao (gần 1): Phẳng, giống white noise
+  - Thấp (gần 0): Có peak, âm nhạc/tiếng chim
+```
+
+**Công thức (dễ hiểu)**:
+```
+Flatness = Geometric Mean / Arithmetic Mean
+           (trung bình nhân)  (trung bình cộng)
+
+Nếu tất cả giá trị bằng nhau:
+  Geometric Mean ≈ Arithmetic Mean
+  → Flatness ≈ 1 (Phẳng)
+
+Nếu có peak cao, valley thấp:
+  Geometric Mean << Arithmetic Mean
+  → Flatness ≈ 0 (Có cấu trúc)
+```
+
+#### **📊 Ví dụ số liệu**
+
+```
+Âm thanh                    | Spectral Flatness | Ý nghĩa
+---------------------------|-------------------|----------
+Chim hót (rõ ràng)          | 0.15-0.30         | Có cấu trúc
+Chim kêu (ít cấu trúc)      | 0.40-0.55         | Trung bình
+Tiếng gió                   | 0.70-0.85         | Gần white noise
+Tiếng nước (ngôn ngữ nước)  | 0.75-0.90         | Phẳng, noise-like
+Pink noise (reference)      | ≈ 1.0             | Hoàn toàn phẳng
+```
+
+#### **🎯 Tại sao chọn Spectral Flatness?**
+
+| Lý do | Giải thích | Ứng dụng |
+|-------|-----------|---------|
+| **1. Phân biệt âm nhạc vs noise** | Chim hót = âm nhạc (flatness thấp)<br>Background = noise (flatness cao) | Lọc tiếng chim tốt |
+| **2. Chỉ 1 số** | Đơn giản, tính nhanh | Không tốn tài nguyên |
+| **3. Bổ sung Spectral Contrast** | Contrast: Sự khác biệt dải<br>Flatness: Độ bằng toàn phổ | Cùng nhìn từ 2 góc độ |
+| **4. Bất biến pitch** | Không phụ thuộc cao/thấp | Phân biệt loài chim |
+
+#### **📝 Công thức đầy đủ**
+
+```
+Spectral Flatness được tính:
+
+Bước 1: Lấy magnitude spectrum M = |FFT(audio)|
+        M = [m1, m2, m3, ..., mn]
+
+Bước 2: Tính Geometric Mean
+        GM = (m1 × m2 × m3 × ... × mn)^(1/n)
+
+Bước 3: Tính Arithmetic Mean
+        AM = (m1 + m2 + m3 + ... + mn) / n
+
+Bước 4: Flatness = GM / AM
+        (hoặc logarithm để normalize)
+
+Ví dụ:
+Spectrum: [1.0, 1.1, 0.9, 1.0, 1.2]  (phẳng)
+GM = (1.0 × 1.1 × 0.9 × 1.0 × 1.2)^(1/5) = 1.04
+AM = (1.0 + 1.1 + 0.9 + 1.0 + 1.2) / 5 = 1.04
+Flatness = 1.04 / 1.04 ≈ 1.0 (phẳng!)
+
+Spectrum: [5.0, 0.1, 0.2, 0.1, 0.3]  (có peak)
+GM = (5.0 × 0.1 × 0.2 × 0.1 × 0.3)^(1/5) = 0.35
+AM = (5.0 + 0.1 + 0.2 + 0.1 + 0.3) / 5 = 1.14
+Flatness = 0.35 / 1.14 ≈ 0.30 (có cấu trúc!)
+```
+
+#### **💡 Câu hỏi thầy có thệ hỏi**
+
+**Q1: "Công thức Geometric Mean là gì?"**
+```
+A: Geometric Mean = nth root of (tích tất cả giá trị)
+
+Ví dụ:
+- Arithmetic Mean của [2, 8]:  (2 + 8) / 2 = 5
+- Geometric Mean của [2, 8]:   √(2 × 8) = √16 = 4
+
+Geometric Mean nhạy cảm với "outliers" (giá trị lạ):
+- [1, 1, 1, 1, 1]: GM = 1, AM = 1 (bằng nhau)
+- [1, 1, 1, 1, 100]: GM = 2.5, AM = 20.8 (khác xa!)
+  → Flatness = 2.5 / 20.8 = 0.12 (thấp, có peak!)
+```
+
+**Q2: "Flatness cao có nghĩa là gì?"**
+```
+A: Flatness cao (> 0.5) = "Tiếng noise, không có nhạc"
+
+Ứng dụng:
+- Phát hiện background noise
+- Detect silence (flatness ≈ 0, vì GM ≈ 0)
+- Đánh giá chất lượng thu âm
+```
+
+**Q3: "Dùng Spectral Flatness để làm gì?"**
+```
+A: Có 3 cách dùng:
+
+1. Phân loại âm thanh:
+   - Flatness < 0.4: Chim hót (âm nhạc)
+   - Flatness > 0.6: Background noise
+   → Loại bỏ frame noise trước khi extract features
+
+2. Chọn frames tốt:
+   - Chỉ dùng frames có flatness thấp
+   → Chất lượng features cao hơn
+
+3. Feature chính:
+   - Thêm "spectral_flatness_mean" vào feature vector
+   → Giúp model phân biệt loài chim tốt hơn
+```
 
 ---
 
@@ -475,6 +671,7 @@ Một số loài chim có nhịp điệu đặc trưng:
 | **ZCR** | Tần số thô | Tần số cao | Tần số thấp | ⭐⭐⭐⭐ |
 | **Chroma** | Giai điệu | Có pattern | Không pattern | ⭐⭐⭐ |
 | **RMS Energy** | Độ to | To | Nhỏ | ⭐⭐⭐⭐ |
-| **Tempo** | Nhịp độ | Nhanh | Chậm | ⭐⭐⭐ |
+| **Spectral Contrast** | Sự chênh lệch dải tần | Tiếng chim rõ | Background noise | ⭐⭐⭐⭐⭐ |
+| **Spectral Flatness** | Độ bằng phổ | Noise-like | Âm nhạc/chim hót | ⭐⭐⭐⭐ |
 
 ---
