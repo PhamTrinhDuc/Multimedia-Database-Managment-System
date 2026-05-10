@@ -22,12 +22,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from database import get_connection
-from feature_extraction import process_single_audio
+from process_data.database import get_connection
+from process_data.feature_extraction import process_single_audio
 from retriever import run_query
 
 STATS_PATH = Path(__file__).parent.parent / "data" / "feature_stats.pkl"
-DATA_PATH  = Path(__file__).parent.parent / "data" / "0000.parquet"
+
+# Load from samples folder hoặc parquet tùy vào data source
+# Hiện tại dùng samples folder nên không cần load parquet
+DATA_PATH  = None  # Deprecated - không còn dùng parquet bytes
 
 # ---------------------------------------------------------------------------
 # App state
@@ -38,9 +41,10 @@ app_state: dict = {}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Load feature normalization stats từ indexing pipeline
     with open(STATS_PATH, "rb") as f:
         app_state["stats"] = pickle.load(f)
-    app_state["df"] = pd.read_parquet(DATA_PATH)
+    # Không cần load parquet nữa - dùng real files từ samples folder
     yield
     app_state.clear()
 
@@ -68,7 +72,6 @@ class SearchResult(BaseModel):
     audio_id: int
     species_name: str
     similarity: float
-    distance: float
 
 
 class BirdInfo(BaseModel):
@@ -132,7 +135,6 @@ async def search(
             audio_id=r["audio_id"],
             species_name=r["label"],
             similarity=r["similarity"],
-            distance=r["distance"],
         )
         for i, r in enumerate(hits)
     ]
@@ -193,13 +195,29 @@ def get_audio(audio_id: int):
     if row is None:
         raise HTTPException(status_code=404, detail=f"Audio id={audio_id} not found.")
 
-    # file_path có dạng "parquet/{original_row_index}"
-    print(row)
+    file_path = row[0]
+    
     try:
-        idx = int(row[0].split("/")[-1])
-        audio_bytes = bytes(app_state["df"].iloc[idx]["audio"]["bytes"])
+        # file_path là real file path (ví dụ: "data/samples/Turdus_merula/bird_001.wav")
+        # hoặc fallback format (ví dụ: "parquet/0")
+        
+        if file_path.startswith("parquet/"):
+            # Legacy: file từ parquet - không hỗ trợ nữa
+            raise HTTPException(
+                status_code=501, 
+                detail=f"Audio from parquet format ({file_path}) not supported. Please re-index with samples folder."
+            )
+        else:
+            # Real file path - load từ disk
+            audio_file = Path(file_path)
+            if not audio_file.exists():
+                raise FileNotFoundError(f"Audio file not found: {file_path}")
+            
+            audio_bytes = audio_file.read_bytes()
+            return Response(content=audio_bytes, media_type="audio/wav")
+            
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=f"Audio file not found: {e}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Could not load audio: {e}")
-
-    return Response(content=audio_bytes, media_type="audio/wav")
 # uvicorn api:app --reload --port 8000

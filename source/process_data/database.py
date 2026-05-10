@@ -4,7 +4,7 @@ database.py — Kết nối DB, tạo bảng, và quản lý vector index.
 Schema (4 bảng):
     birds             — thông tin loài chim
     audio_files       — siêu dữ liệu file âm thanh  (FK → birds)
-    acoustic_features — giá trị feature scalar gốc  (FK → audio_files)
+    acoustic_features — feature arrays (mfcc, spectral, etc.)  (FK → audio_files)
     embeddings        — vector embedding L2-normalize (FK → audio_files)
 """
 
@@ -22,6 +22,25 @@ DB_CONFIG = {
 VECTOR_DIM = 108   # Phải khớp với số chiều vector từ build_vector()
 INDEX_NAME = "embeddings_embedding_idx"
 
+# Fixed feature array names (phải khớp với keys từ extract_features output)
+FEATURE_ARRAYS = {
+    'mfcc_mean': 20,              # MFCC mean
+    'mfcc_std': 20,               # MFCC std
+    'mfcc_delta_mean': 20,        # MFCC delta mean
+    'mfcc_delta2_mean': 20,       # MFCC delta² mean
+    'spectral_centroid_mean': 1,  # centroid mean (scalar)
+    'spectral_centroid_std': 1,   # centroid std (scalar)
+    'spectral_rolloff_mean': 1,   # rolloff mean (scalar)
+    'spectral_bandwidth_mean': 1, # bandwidth mean (scalar)
+    'spectral_contrast_mean': 7,  # 7 subbands
+    'spectral_flatness_mean': 1,  # flatness mean (scalar)
+    'zcr_mean': 1,                # ZCR mean (scalar)
+    'zcr_std': 1,                 # ZCR std (scalar)
+    'chroma_mean': 12,            # 12 chroma bins
+    'rms_mean': 1,                # RMS mean (scalar)
+    'rms_std': 1,                 # RMS std (scalar)
+}
+
 
 def get_connection():
     conn = psycopg2.connect(**DB_CONFIG)
@@ -29,7 +48,7 @@ def get_connection():
     return conn
 
 
-def create_tables(conn, feature_cols: list[str]):
+def create_tables(conn):
     """
     Tạo 4 bảng:
 
@@ -40,16 +59,30 @@ def create_tables(conn, feature_cols: list[str]):
         id, bird_id FK→birds, file_path, sample_rate, duration_s,
         record_time, device, created_at
 
-    acoustic_features — giá trị từng feature scalar gốc (trước normalize)
-        id, audio_id FK→audio_files, <108 feature columns>
+    acoustic_features — feature arrays (thay vì 108 scalar columns)
+        id, audio_id FK→audio_files, 
+        mfcc_mean FLOAT8[20],
+        mfcc_std FLOAT8[20],
+        ... (13 FLOAT8[] columns total)
 
     embeddings        — vector embedding L2-normalized
         id, audio_id FK→audio_files, embedding vector(108)
     """
-    feature_col_defs = ",\n        ".join(f'"{col}" FLOAT' for col in feature_cols)
+    # Build FLOAT8[] column definitions
+    feature_col_defs = ",\n        ".join(
+        f'"{fname}" FLOAT8[{fdim}]'
+        for fname, fdim in FEATURE_ARRAYS.items()
+    )
 
     with conn.cursor() as cur:
         cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+
+        # DROP old tables nếu schema thay đổi (backward compatibility)
+        # Thứ tự: embeddings, acoustic_features, audio_files, birds (FK order)
+        cur.execute("DROP TABLE IF EXISTS embeddings CASCADE;")
+        cur.execute("DROP TABLE IF EXISTS acoustic_features CASCADE;")
+        cur.execute("DROP TABLE IF EXISTS audio_files CASCADE;")
+        cur.execute("DROP TABLE IF EXISTS birds CASCADE;")
 
         # Bảng 1: thông tin loài chim
         cur.execute("""
@@ -75,7 +108,7 @@ def create_tables(conn, feature_cols: list[str]):
             );
         """)
 
-        # Bảng 3: feature scalar gốc (raw, trước normalize)
+        # Bảng 3: feature arrays (gốc, trước normalize)
         cur.execute(f"""
             CREATE TABLE IF NOT EXISTS acoustic_features (
                 id       SERIAL PRIMARY KEY,
@@ -95,7 +128,11 @@ def create_tables(conn, feature_cols: list[str]):
 
         conn.commit()
 
-    print("Tables birds / audio_files / acoustic_features / embeddings created (or already exist).")
+    print("✅ Tables recreated (old schema dropped):")
+    print("   - birds")
+    print("   - audio_files")
+    print("   - acoustic_features (12 FLOAT8[] array columns)")
+    print("   - embeddings (vector(108))")
 
 
 def drop_index(conn):

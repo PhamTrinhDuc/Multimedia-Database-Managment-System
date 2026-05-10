@@ -17,8 +17,8 @@ import pickle
 import numpy as np
 import pandas as pd
 
-from database import get_connection
-from feature_extraction import process_single_audio
+from process_data.database import get_connection
+from process_data.feature_extraction import process_single_audio
 
 def search_similar(
     conn,
@@ -34,8 +34,10 @@ def search_similar(
     """
     Tìm top_k embeddings giống nhất với query_vector.
 
-    Cosine distance (<=>): range [0, 2], càng nhỏ càng giống.
-    Cosine similarity = 1 - distance: range [-1, 1], càng lớn càng giống.
+    Cosine similarity (<#>): range [-1, 1], càng lớn càng giống.
+      -1: perfectly opposite
+       0: orthogonal
+       1: identical
 
     Args:
         conn         : psycopg2 connection (đã register_vector)
@@ -47,7 +49,7 @@ def search_similar(
         ef_search    : [HNSW] beam size lúc query; cao hơn → recall tốt hơn / chậm hơn
 
     Returns:
-        list of dict: id, file_id, label, distance, similarity
+        list of dict: embedding_id, audio_id, label, similarity (cosine, [-1, 1])
     """
     mode = mode.lower()
     if mode not in ("ivfflat", "hnsw"):
@@ -60,17 +62,17 @@ def search_similar(
         else:  # hnsw
             cur.execute("SET hnsw.ef_search = %s;", (ef_search,))
 
-        # --- Run ANN query ---
+        # --- Run ANN query (sort by similarity descending: 1 = most similar) ---
         if filter_label:
             cur.execute(
                 """
                 SELECT e.id, af.id, b.species_name,
-                       e.embedding <=> %s::vector AS distance
+                       e.embedding <#> %s::vector AS similarity
                 FROM embeddings e
                 JOIN audio_files af ON af.id = e.audio_id
                 JOIN birds b ON b.id = af.bird_id
                 WHERE b.species_name = %s
-                ORDER BY distance
+                ORDER BY similarity DESC
                 LIMIT %s;
                 """,
                 (query_vector, filter_label, top_k),
@@ -79,11 +81,11 @@ def search_similar(
             cur.execute(
                 """
                 SELECT e.id, af.id, b.species_name,
-                       e.embedding <=> %s::vector AS distance
+                       e.embedding <#> %s::vector AS similarity
                 FROM embeddings e
                 JOIN audio_files af ON af.id = e.audio_id
                 JOIN birds b ON b.id = af.bird_id
-                ORDER BY distance
+                ORDER BY similarity DESC
                 LIMIT %s;
                 """,
                 (query_vector, top_k),
@@ -96,8 +98,7 @@ def search_similar(
             "embedding_id": r[0],
             "audio_id": r[1],  # audio_files.id
             "label": r[2],
-            "distance": round(float(r[3]), 6),
-            "similarity": round(1 - float(r[3]), 6),
+            "similarity": round(float(r[3]), 6),
         }
         for r in rows
     ]

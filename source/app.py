@@ -84,12 +84,24 @@ if uploaded is not None:
             except requests.exceptions.ConnectionError:
                 st.error("Không kết nối được đến API. Hãy chắc chắn `api.py` đang chạy.")
                 st.stop()
+            except Exception as e:
+                st.error(f"Lỗi kết nối: {e}")
+                st.stop()
 
         if not response.ok:
-            st.error(f"API lỗi {response.status_code}: {response.json().get('detail', '')}")
+            # API trả về error - cố gắng parse JSON, nếu không được thì dùng text
+            try:
+                error_detail = response.json().get('detail', 'Unknown error')
+            except (ValueError, KeyError):
+                error_detail = response.text or f"HTTP {response.status_code}"
+            st.error(f"API lỗi {response.status_code}: {error_detail}")
             st.stop()
-
-        resp_json = response.json()
+        
+        try:
+            resp_json = response.json()
+        except ValueError:
+            st.error("API trả về response không phải JSON")
+            st.stop()
         results = resp_json["results"]
         intermediate = resp_json.get("intermediate")
 
@@ -133,10 +145,12 @@ if uploaded is not None:
                 col1, col2 = st.columns([3, 1])
                 with col1:
                     st.markdown(f"**#{r['rank']} — {r['species_name']}**")
-                    st.caption(f"Audio ID: {r['audio_id']}  |  distance: {r['distance']:.4f}")
+                    st.caption(f"Audio ID: {r['audio_id']}")
                 with col2:
-                    st.metric("Similarity", f"{r['similarity'] * 100:.1f}%")
-                st.progress(min(r["similarity"], 1.0))
+                    st.metric("Similarity", f"{r['similarity']:.4f}")
+                # Normalize similarity từ [-1, 1] → [0, 1] cho progress bar
+                progress_val = (r["similarity"] + 1) / 2
+                st.progress(progress_val)
 
                 # Audio player: fetch từ API
                 try:

@@ -14,4 +14,5 @@ dependencies = [
     "uvicorn>=0.41.0",
     "streamlit>=1.55.0",
     "python-multipart>=0.0.22",
+    "tqdm>=4.67.3",
 ]

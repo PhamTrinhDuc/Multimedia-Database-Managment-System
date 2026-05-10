@@ -236,45 +236,97 @@ curl http://localhost:8000/health
 ### **Schema PostgreSQL**
 
 ```sql
--- 1. Bảng loài chim
+-- 1️⃣ Bảng loài chim
 CREATE TABLE birds (
     id SERIAL PRIMARY KEY,
-    species_name VARCHAR(255) UNIQUE NOT NULL,
+    species_name TEXT NOT NULL UNIQUE,
+    family TEXT,
     description TEXT
 );
 
--- 2. Bảng file âm thanh
+-- 2️⃣ Bảng file âm thanh
 CREATE TABLE audio_files (
     id SERIAL PRIMARY KEY,
-    bird_id INT REFERENCES birds(id),
-    filename VARCHAR(255) NOT NULL,
-    file_path VARCHAR(500),
-    duration FLOAT,
-    sample_rate INT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    bird_id INT NOT NULL REFERENCES birds(id) ON DELETE CASCADE,
+    file_path TEXT,                  -- Đường dẫn file (dùng để trace lại trong parquet)
+    sample_rate INT,                 -- Sample rate sau preprocess (=22050 Hz)
+    duration_s FLOAT,                -- Độ dài audio sau trim silence (giây)
+    record_time TIMESTAMP,           -- Thời gian ghi âm (nếu có)
+    device TEXT,                     -- Thiết bị ghi âm
+    created_at TIMESTAMP DEFAULT NOW()
 );
 
--- 3. Bảng đặc trưng âm học
+-- 3️⃣ Bảng đặc trưng âm học (FLAT - 108 cột scalar)
 CREATE TABLE acoustic_features (
     id SERIAL PRIMARY KEY,
-    audio_file_id INT REFERENCES audio_files(id),
-    feature_name VARCHAR(100),
-    feature_values FLOAT8[],  -- Mảng giá trị MFCC
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    audio_id INT NOT NULL REFERENCES audio_files(id) ON DELETE CASCADE,
+    
+    -- MFCC Mean (20 chiều)
+    "mfcc_mean_1" FLOAT, "mfcc_mean_2" FLOAT, ..., "mfcc_mean_20" FLOAT,
+    
+    -- MFCC Std (20 chiều)
+    "mfcc_std_1" FLOAT, "mfcc_std_2" FLOAT, ..., "mfcc_std_20" FLOAT,
+    
+    -- MFCC Delta Mean (20 chiều)
+    "mfcc_delta_mean_1" FLOAT, ..., "mfcc_delta_mean_20" FLOAT,
+    
+    -- MFCC Delta² Mean (20 chiều)
+    "mfcc_delta2_mean_1" FLOAT, ..., "mfcc_delta2_mean_20" FLOAT,
+    
+    -- Spectral Features (8 chiều)
+    "spectral_centroid_mean" FLOAT,
+    "spectral_centroid_std" FLOAT,
+    "spectral_rolloff_mean" FLOAT,
+    "spectral_bandwidth_mean" FLOAT,
+    "spectral_flatness_mean" FLOAT,
+    "spectral_contrast_mean_1" FLOAT, ..., "spectral_contrast_mean_7" FLOAT,
+    
+    -- Zero Crossing Rate (2 chiều)
+    "zcr_mean" FLOAT,
+    "zcr_std" FLOAT,
+    
+    -- Chroma Features (12 chiều)
+    "chroma_mean_1" FLOAT, ..., "chroma_mean_12" FLOAT,
+    
+    -- RMS Energy (2 chiều)
+    "rms_mean" FLOAT,
+    "rms_std" FLOAT
+    
+    -- Tổng: 20+20+20+20+8+2+12+2 = 104 chiều + 4 phụ = 108 chiều ✓
 );
 
--- 4. Bảng vector embedding (hỗ trợ pgvector)
+-- 4️⃣ Bảng vector embedding (hỗ trợ pgvector)
 CREATE TABLE embeddings (
     id SERIAL PRIMARY KEY,
-    audio_file_id INT REFERENCES audio_files(id),
-    embedding vector(108),  -- 108-chiều vector (MFCC 60d + Spectral 11d + ZCR 2d + Chroma 12d + RMS 2d)
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    audio_id INT NOT NULL REFERENCES audio_files(id) ON DELETE CASCADE,
+    embedding vector(108) NOT NULL  -- 108-chiều L2-normalized vector
 );
 
--- Index cho tìm kiếm vector nhanh
-CREATE INDEX embeddings_embedding_idx ON embeddings USING ivfflat (embedding vector_cosine_ops);
-CREATE INDEX embeddings_embedding_hnsw_idx ON embeddings USING hnsw (embedding vector_cosine_ops);
+-- ⚡ Indexes cho tìm kiếm vector nhanh
+CREATE INDEX embeddings_embedding_ivfflat_idx ON embeddings 
+    USING ivfflat (embedding vector_cosine_ops) WITH (lists = 40);
+
+CREATE INDEX embeddings_embedding_hnsw_idx ON embeddings 
+    USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
 ```
+
+---
+
+### 📊 Giải Thích Schema
+
+| Bảng | Mục Đích | Rows | Notes |
+|------|---------|------|-------|
+| **birds** | Danh sách loài chim | 1 row/loài | Lookup metadata loài |
+| **audio_files** | Metadata file âm thanh | 1 row/file | FK → birds, metadata ghi âm |
+| **acoustic_features** | 108 features scalar (raw) | 1 row/file | **FLAT 108 cột** (trước normalize) |
+| **embeddings** | Vector 108-d (L2-norm) | 1 row/file | Dùng cho vector similarity search |
+
+**Lợi ích của cấu trúc này:**
+- ✅ 1 audio_file → 1 row acoustic_features (không lặp lại)
+- ✅ Trực tiếp match với code `flatten_features()` và `build_vector()`
+- ✅ Query nhanh: SELECT * FROM acoustic_features WHERE audio_id = X
+- ✅ Dễ thêm indexing trên từng feature
+- ✅ Dễ export sang ML frameworks (numpy array 1D = 108 cột)
 
 ---
 
@@ -413,7 +465,63 @@ Xem phần giải thích chi tiết cho mỗi feature: [EXPLAINATION_FEATURE.md]
 
 ---
 
-## 📈 Quy Trình Tìm Kiếm
+## 📈 Quy Trình Xử Lý Dữ Liệu (Data Pipeline)
+
+### **Giai Đoạn 1: OFFLINE (Xử Lý Dataset)**
+
+```
+Parquet file (500+ audio)
+        ↓
+1. Load & Preprocess (22kHz, trim silence, normalize)
+        ↓
+2. Extract 9 loại features → 108 scalar values/file
+        ↓
+3. StandardScaler normalize (mean=0, std=1)
+        ↓
+4. L2 normalize embedding (||vec|| = 1)
+        ↓
+5. Bulk Insert vào 4 bảng DB:
+   ├─ birds (nếu loài chưa tồn tại)
+   ├─ audio_files (metadata file)
+   ├─ acoustic_features (108 cột raw features)
+   └─ embeddings (108-d vector)
+        ↓
+6. Tạo vector indexes (IVFFlat hoặc HNSW)
+```
+
+**Chạy offline pipeline:**
+```bash
+cd source
+python indexing.py --data ../data/0000.parquet --mode ivfflat
+# Hoặc: --mode hnsw
+```
+
+**Module chính:**
+- [`indexing.py`](source/indexing.py) - Orchestrator (load → extract → normalize → insert)
+- [`feature_extraction.py`](source/feature_extraction.py) - Extract 9 loại features
+- [`database.py`](source/database.py) - Create tables + insert data
+
+---
+
+### **Giai Đoạn 2: ONLINE (Tìm Kiếm từ User)**
+
+```
+User upload audio file
+        ↓
+1. Preprocess (dùng cùng quy trình offline)
+        ↓
+2. Extract 9 loại features
+        ↓
+3. Normalize dùng stats đã lưu từ offline
+        ↓
+4. L2 normalize → query vector
+        ↓
+5. Vector similarity search (cosine distance, top-K)
+        ↓
+6. Trả về Top-5 file tương tự + metadata
+```
+
+**Chi tiết tìm kiếm:**
 
 ```
 ┌──────────────────────────────────────────────────────────────┐

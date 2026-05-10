@@ -155,7 +155,7 @@ def normalize_feature_columns(df_features):
     Cần thiết trước khi lưu vector vào pgvector để cosine/L2 similarity có ý nghĩa.
     Trả về: df đã normalize + thống kê (mean, std) để dùng khi query.
     """
-    skip_cols = ['label', 'file_id', 'duration_s', 'sample_rate']
+    skip_cols = ['label', 'file_id', 'duration_s', 'sample_rate', 'file_path']
     feature_cols = [c for c in df_features.columns if c not in skip_cols]
 
     stats = {}
